@@ -1,0 +1,16 @@
+[Unit]
+Description=GoAwayGeek Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scott
+WorkingDirectory=/home/scott/goawaygeek_bot
+ExecStart=/home/scott/goawaygeek_bot/venv/bin/python bot.py
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=/home/scott/goawaygeek_bot/.env
+
+[Install]
+WantedBy=multi-user.target
