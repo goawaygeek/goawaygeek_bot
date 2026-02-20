@@ -35,7 +35,7 @@ A personal Telegram bot that captures messages you send from your phone and stor
 
 ```bash
 # Clone the repository
-git clone https://github.com/scottbrewer/goawaygeek_bot.git
+git clone https://github.com/goawaygeek/goawaygeek_bot.git
 cd goawaygeek_bot
 
 # Create and activate virtual environment
@@ -84,13 +84,21 @@ python -m pytest tests/ -v
 3. Find it on your network: `ping goawaygeek.local` (or check your router)
 4. SSH in: `ssh scott@goawaygeek.local`
 
+### Install Git
+
+Pi OS Lite doesn't include git out of the box. Install it first:
+
+```bash
+sudo apt-get update && sudo apt-get install -y git
+```
+
 ### Run the Setup Script
 
 The `setup.sh` script handles everything: Tailscale, Python, dependencies, systemd.
 
 ```bash
 # From your SSH session on the Pi:
-git clone https://github.com/scottbrewer/goawaygeek_bot.git
+git clone https://github.com/goawaygeek/goawaygeek_bot.git
 cd goawaygeek_bot
 bash setup.sh
 ```

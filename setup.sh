@@ -6,7 +6,7 @@
 #
 set -e
 
-REPO_URL="https://github.com/scottbrewer/goawaygeek_bot.git"
+REPO_URL="https://github.com/goawaygeek/goawaygeek_bot.git"
 INSTALL_DIR="$HOME/goawaygeek_bot"
 SERVICE_NAME="goawaygeek_bot"
 
