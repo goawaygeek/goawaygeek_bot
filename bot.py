@@ -10,6 +10,7 @@ from telegram.ext import (
 )
 
 import config
+from knowledge.llm import ClaudeLLMClient
 from storage import ensure_storage_dir, save_message
 
 logging.basicConfig(
@@ -18,20 +19,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Module-level LLM client, initialized in main()
+llm = None
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command."""
     await update.message.reply_text(
-        "Hello! I'm your personal note-taking bot. "
-        "Send me any message and I'll save it for you."
+        "Hello! I'm your personal knowledge base bot. "
+        "Send me any message and I'll respond with the help of an LLM."
     )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Save incoming text messages to storage."""
+    """Process incoming text messages through the LLM and reply."""
     user = update.effective_user
     text = update.message.text
 
+    # Save to the legacy log file
     save_message(
         file_path=config.MESSAGES_FILE,
         user_id=user.id,
@@ -39,14 +44,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         text=text,
     )
 
-    logger.info("Saved message from user %s (id=%d)", user.username, user.id)
-    await update.message.reply_text("Saved.")
+    # Send through the LLM
+    response = await llm.chat(text)
+
+    logger.info("Processed message from user %s (id=%d)", user.username, user.id)
+    await update.message.reply_text(response)
 
 
 def main() -> None:
-    """Validate config, build application, and start polling."""
+    """Validate config, initialize LLM, build application, and start polling."""
+    global llm
     config.validate_config()
     ensure_storage_dir(config.MESSAGES_FILE)
+
+    llm = ClaudeLLMClient(
+        api_key=config.ANTHROPIC_API_KEY,
+        model=config.LLM_MODEL,
+    )
 
     auth = filters.User(user_id=config.AUTHORIZED_USER_ID)
 
@@ -58,7 +72,9 @@ def main() -> None:
     )
 
     logger.info(
-        "Bot starting. Listening for messages from user ID %d.", config.AUTHORIZED_USER_ID
+        "Bot starting with LLM model %s. Listening for user ID %d.",
+        config.LLM_MODEL,
+        config.AUTHORIZED_USER_ID,
     )
     app.run_polling()
 
