@@ -87,3 +87,48 @@ def test_default_messages_file():
     with patch.dict(os.environ, _VALID_ENV, clear=True):
         config.validate_config()
         assert str(config.MESSAGES_FILE) == "data/messages.log"
+
+
+def test_default_db_path():
+    """validate_config uses default DB_PATH when not specified."""
+    with patch.dict(os.environ, _VALID_ENV, clear=True):
+        config.validate_config()
+        assert str(config.DB_PATH) == "data/knowledge.db"
+
+
+def test_custom_db_path():
+    """validate_config respects a custom DB_PATH."""
+    env = {**_VALID_ENV, "DB_PATH": "/tmp/custom_kb.db"}
+    with patch.dict(os.environ, env, clear=True):
+        config.validate_config()
+        assert str(config.DB_PATH) == "/tmp/custom_kb.db"
+
+
+def test_default_conversation_log_db_path():
+    """validate_config uses default CONVERSATION_LOG_DB_PATH when not specified."""
+    with patch.dict(os.environ, _VALID_ENV, clear=True):
+        config.validate_config()
+        assert str(config.CONVERSATION_LOG_DB_PATH) == "data/conversations.db"
+
+
+def test_custom_conversation_log_db_path():
+    """validate_config respects a custom CONVERSATION_LOG_DB_PATH."""
+    env = {**_VALID_ENV, "CONVERSATION_LOG_DB_PATH": "/tmp/custom_convos.db"}
+    with patch.dict(os.environ, env, clear=True):
+        config.validate_config()
+        assert str(config.CONVERSATION_LOG_DB_PATH) == "/tmp/custom_convos.db"
+
+
+def test_default_overview_md_path():
+    """validate_config uses default OVERVIEW_MD_PATH when not specified."""
+    with patch.dict(os.environ, _VALID_ENV, clear=True):
+        config.validate_config()
+        assert str(config.OVERVIEW_MD_PATH) == "data/overview.md"
+
+
+def test_custom_overview_md_path():
+    """validate_config respects a custom OVERVIEW_MD_PATH."""
+    env = {**_VALID_ENV, "OVERVIEW_MD_PATH": "/tmp/custom_overview.md"}
+    with patch.dict(os.environ, env, clear=True):
+        config.validate_config()
+        assert str(config.OVERVIEW_MD_PATH) == "/tmp/custom_overview.md"
