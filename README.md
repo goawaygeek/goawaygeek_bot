@@ -214,14 +214,41 @@ goawaygeek_bot/
 - Check `sudo journalctl -u goawaygeek_bot -b` for boot-time errors
 - Network might not be ready — the service waits for `network-online.target` but Wi-Fi can be slow
 
+## 7. Browsing Your Knowledge Base
+
+### Rolling Overview
+
+The bot maintains a rolling overview of your knowledge at `data/overview.md`. This file updates automatically every time the overview changes. Open it in any text editor or Obsidian.
+
+### Web Interface (Datasette)
+
+[Datasette](https://datasette.io/) serves your SQLite databases as a browsable web interface with search, filtering, and a JSON API.
+
+```bash
+# Browse knowledge base and conversation history
+datasette data/knowledge.db data/conversations.db
+```
+
+Then open http://localhost:8001 in your browser.
+
+If running on the Pi, bind to all interfaces so you can access it via Tailscale:
+
+```bash
+datasette data/knowledge.db data/conversations.db --host 0.0.0.0
+```
+
+Then open `http://<pi-tailscale-ip>:8001` from any device on your Tailscale network.
+
+### VS Code Extension
+
+For quick local viewing of SQLite databases, install the **SQLite Viewer** extension (`alexcvzz.vscode-sqlite`) in VS Code.
+
 ## Future Ideas
 
-- Search through saved messages
-- Tag and categorize messages with `/tag`
-- Multiple storage backends (SQLite, Markdown files)
-- Export messages to other formats
+- Obsidian vault sync (export knowledge items as markdown files)
 - Voice message transcription
-- Periodic summaries
+- Web UI dashboard
+- Multi-user support
 
 ## License
 

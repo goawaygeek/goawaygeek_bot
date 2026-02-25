@@ -11,6 +11,9 @@ AUTHORIZED_USER_ID: int = 0
 MESSAGES_FILE: Path = Path(os.getenv("MESSAGES_FILE", "./data/messages.log"))
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 LLM_MODEL: str = os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
+DB_PATH: Path = Path(os.getenv("DB_PATH", "./data/knowledge.db"))
+CONVERSATION_LOG_DB_PATH: Path = Path(os.getenv("CONVERSATION_LOG_DB_PATH", "./data/conversations.db"))
+OVERVIEW_MD_PATH: Path = Path(os.getenv("OVERVIEW_MD_PATH", "./data/overview.md"))
 
 
 def validate_config() -> None:
@@ -18,7 +21,7 @@ def validate_config() -> None:
 
     Exits with a clear error message if anything is missing or invalid.
     """
-    global BOT_TOKEN, AUTHORIZED_USER_ID, MESSAGES_FILE, ANTHROPIC_API_KEY, LLM_MODEL
+    global BOT_TOKEN, AUTHORIZED_USER_ID, MESSAGES_FILE, ANTHROPIC_API_KEY, LLM_MODEL, DB_PATH, CONVERSATION_LOG_DB_PATH, OVERVIEW_MD_PATH
 
     BOT_TOKEN = os.getenv("BOT_TOKEN", "")
     if not BOT_TOKEN:
@@ -42,3 +45,8 @@ def validate_config() -> None:
         sys.exit("Error: ANTHROPIC_API_KEY is not set in .env file.")
 
     LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
+
+    DB_PATH = Path(os.getenv("DB_PATH", "./data/knowledge.db"))
+
+    CONVERSATION_LOG_DB_PATH = Path(os.getenv("CONVERSATION_LOG_DB_PATH", "./data/conversations.db"))
+    OVERVIEW_MD_PATH = Path(os.getenv("OVERVIEW_MD_PATH", "./data/overview.md"))
