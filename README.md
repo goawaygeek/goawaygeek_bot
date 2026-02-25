@@ -33,17 +33,22 @@ A personal Telegram bot that captures messages you send from your phone and stor
 
 ## 3. Development Setup (Mac/Linux)
 
+Requires [uv](https://docs.astral.sh/uv/) for dependency management:
+
 ```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # Clone the repository
 git clone https://github.com/goawaygeek/goawaygeek_bot.git
 cd goawaygeek_bot
 
 # Create and activate virtual environment
-python3 -m venv venv
+uv venv venv
 source venv/bin/activate
 
 # Install dependencies
-pip install -r requirements-dev.txt
+uv pip install -r requirements-dev.txt
 
 # Create your config
 cp .env.example .env
@@ -106,8 +111,8 @@ bash setup.sh
 The script will:
 1. Update system packages
 2. Install [Tailscale](https://tailscale.com/) for secure remote access
-3. Install Python 3, venv, and git
-4. Create a virtual environment and install dependencies
+3. Install Python 3, git, and [uv](https://docs.astral.sh/uv/)
+4. Create a virtual environment and install dependencies (via uv)
 5. Prompt you to configure `.env` with your bot token and user ID
 6. Install and start the systemd service
 
@@ -143,7 +148,7 @@ sudo systemctl restart goawaygeek_bot
 sudo systemctl stop goawaygeek_bot
 
 # Update to latest code
-cd ~/goawaygeek_bot && git pull && sudo systemctl restart goawaygeek_bot
+cd ~/goawaygeek_bot && git pull && uv pip install -r requirements.txt --python venv/bin/python && sudo systemctl restart goawaygeek_bot
 ```
 
 ## 6. Creating the GitHub Repository

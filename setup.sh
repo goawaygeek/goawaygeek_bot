@@ -34,9 +34,13 @@ if ! tailscale status &>/dev/null; then
     read -p "Press Enter after you've run 'sudo tailscale up' and authenticated, or Ctrl+C to exit..."
 fi
 
-# --- 3. Install Python and git ---
-echo "[3/7] Installing Python 3, python3-venv, and git..."
-sudo apt-get install -y -qq python3 python3-venv python3-pip git
+# --- 3. Install Python, git, and uv ---
+echo "[3/7] Installing Python 3, git, and uv..."
+sudo apt-get install -y -qq python3 git
+if ! command -v uv &>/dev/null; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+fi
 
 # --- 4. Clone the repository ---
 if [ -d "$INSTALL_DIR" ]; then
@@ -51,10 +55,9 @@ cd "$INSTALL_DIR"
 # --- 5. Create virtual environment and install dependencies ---
 echo "[5/7] Setting up Python virtual environment..."
 if [ ! -d "venv" ]; then
-    python3 -m venv venv
+    uv venv venv --python python3
 fi
-venv/bin/pip install --upgrade pip -q
-venv/bin/pip install -r requirements.txt -q
+uv pip install -r requirements.txt --python venv/bin/python
 echo "    Dependencies installed."
 
 # --- 6. Configure .env ---
