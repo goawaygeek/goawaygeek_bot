@@ -14,6 +14,7 @@ import config
 from knowledge.brain import KnowledgeBrain
 from knowledge.conversation_log import SQLiteConversationLog
 from knowledge.llm import ClaudeLLMClient
+from knowledge.prompt_manager import PromptManager
 from knowledge.store import SQLiteStore
 from storage import ensure_storage_dir, save_message
 
@@ -25,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 # Module-level brain, initialized in main()
 brain = None  # type: Optional[KnowledgeBrain]
+
+# context.user_data key for a pending capability-gap feature proposal
+_PENDING_FEATURE_KEY = "pending_feature"
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -44,6 +48,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/recent \u2014 Show recent items\n"
         "/overview \u2014 See your rolling overview\n"
         "/refresh \u2014 Refresh the overview\n"
+        "/confirm_feature \u2014 Apply a proposed prompt improvement\n"
         "/help \u2014 Show this message"
     )
 
@@ -62,7 +67,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
     # Route through the knowledge brain
-    response = await brain.capture(text)
+    response, capability_request = await brain.capture(text)
+
+    # If the LLM flagged this as a capability request, run a gap check
+    if capability_request:
+        gap = await brain.check_capability_gap(text, response)
+        if gap:
+            context.user_data[_PENDING_FEATURE_KEY] = gap
+            proposal_text = gap.get("proposal", "I could improve my prompts to support this.")
+            response = (
+                f"{response}\n\n"
+                f"---\n"
+                f"{proposal_text}\n\n"
+                f"Type /confirm_feature to apply this improvement."
+            )
 
     logger.info("Captured message from user %s (id=%d)", user.username, user.id)
     await update.message.reply_text(response)
@@ -74,8 +92,50 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not question:
         await update.message.reply_text("Usage: /ask <your question>")
         return
-    response = await brain.query(question)
+
+    answer = await brain.query(question)
+
+    # Check whether the answer reveals a capability gap
+    gap = await brain.check_capability_gap(question, answer)
+    if gap:
+        context.user_data[_PENDING_FEATURE_KEY] = gap
+        proposal_text = gap.get("proposal", "I could improve my prompts to support this.")
+        response = (
+            f"{answer}\n\n"
+            f"---\n"
+            f"{proposal_text}\n\n"
+            f"Type /confirm_feature to apply this improvement."
+        )
+    else:
+        response = answer
+
     await update.message.reply_text(response)
+
+
+async def confirm_feature_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Apply a pending capability-gap prompt update."""
+    gap = context.user_data.pop(_PENDING_FEATURE_KEY, None)
+    if not gap:
+        await update.message.reply_text(
+            "No pending feature proposal. Use /ask first — if I detect a gap "
+            "I'll offer to fix it."
+        )
+        return
+
+    prompt_name = gap.get("prompt_name")
+    prompt_update = gap.get("prompt_update")
+
+    if not prompt_name or not prompt_update:
+        await update.message.reply_text(
+            "The proposal didn't include enough detail to apply automatically. "
+            "No changes made."
+        )
+        return
+
+    result = await brain.evolve_prompt(prompt_name, prompt_update)
+    await update.message.reply_text(result)
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -134,6 +194,13 @@ def main() -> None:
     config.validate_config()
     ensure_storage_dir(config.MESSAGES_FILE)
 
+    # Initialize prompt manager (base prompts always present; user repo optional)
+    prompt_manager = PromptManager(
+        base_dir=config.PROMPTS_BASE_DIR,
+        user_dir=config.PROMPTS_USER_DIR if config.PROMPTS_REPO_URL else None,
+        repo_url=config.PROMPTS_REPO_URL,
+    )
+
     # Initialize the knowledge brain
     llm = ClaudeLLMClient(
         api_key=config.ANTHROPIC_API_KEY,
@@ -146,7 +213,12 @@ def main() -> None:
     conversation_log = SQLiteConversationLog(
         db_path=config.CONVERSATION_LOG_DB_PATH,
     )
-    brain = KnowledgeBrain(llm=llm, store=store, conversation_log=conversation_log)
+    brain = KnowledgeBrain(
+        llm=llm,
+        store=store,
+        conversation_log=conversation_log,
+        prompt_manager=prompt_manager,
+    )
 
     auth = filters.User(user_id=config.AUTHORIZED_USER_ID)
 
@@ -155,6 +227,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start_command, filters=auth))
     app.add_handler(CommandHandler("help", help_command, filters=auth))
     app.add_handler(CommandHandler("ask", ask_command, filters=auth))
+    app.add_handler(CommandHandler("confirm_feature", confirm_feature_command, filters=auth))
     app.add_handler(CommandHandler("search", search_command, filters=auth))
     app.add_handler(CommandHandler("recent", recent_command, filters=auth))
     app.add_handler(CommandHandler("overview", overview_command, filters=auth))

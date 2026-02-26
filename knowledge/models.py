@@ -71,6 +71,8 @@ class AnalysisResult:
     summary: str
     response: str
     overview_update: Optional[str] = None
+    capability_request: bool = False
+    extracted_items: List[Dict] = field(default_factory=list)
 
     @classmethod
     def from_llm_json(cls, raw: str) -> "AnalysisResult":
@@ -117,6 +119,8 @@ class AnalysisResult:
             summary=data["summary"],
             response=data["response"],
             overview_update=data.get("overview_update"),
+            capability_request=bool(data.get("capability_request", False)),
+            extracted_items=data.get("extracted_items") or [],
         )
 
 
