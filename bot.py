@@ -67,7 +67,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
     # Route through the knowledge brain
-    response = await brain.capture(text)
+    response, capability_request = await brain.capture(text)
+
+    # If the LLM flagged this as a capability request, run a gap check
+    if capability_request:
+        gap = await brain.check_capability_gap(text, response)
+        if gap:
+            context.user_data[_PENDING_FEATURE_KEY] = gap
+            proposal_text = gap.get("proposal", "I could improve my prompts to support this.")
+            response = (
+                f"{response}\n\n"
+                f"---\n"
+                f"{proposal_text}\n\n"
+                f"Type /confirm_feature to apply this improvement."
+            )
 
     logger.info("Captured message from user %s (id=%d)", user.username, user.id)
     await update.message.reply_text(response)

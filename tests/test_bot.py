@@ -39,7 +39,7 @@ def _make_mock_brain(
 ):
     """Create a mock KnowledgeBrain."""
     mock_brain = MagicMock()
-    mock_brain.capture = AsyncMock(return_value=capture_response)
+    mock_brain.capture = AsyncMock(return_value=(capture_response, False))
     mock_brain.query = AsyncMock(return_value=query_response)
     mock_brain.get_overview = AsyncMock(return_value=overview_text)
     mock_brain.refresh_overview = AsyncMock(return_value=refresh_result)
@@ -176,6 +176,78 @@ async def test_handle_message_uses_first_name_when_no_username(tmp_path: Path):
 
     content = log_file.read_text(encoding="utf-8")
     assert "username=Scott" in content
+
+
+@pytest.mark.asyncio
+async def test_handle_message_capability_request_shows_proposal(tmp_path: Path):
+    """When capture flags capability_request=True, handle_message runs a gap check and appends the proposal."""
+    log_file = tmp_path / "messages.log"
+    mock_brain = _make_mock_brain(capture_response="Sure, I'll start tracking that!")
+    mock_brain.capture = AsyncMock(return_value=("Sure, I'll start tracking that!", True))
+    mock_brain.check_capability_gap = AsyncMock(return_value={
+        "can_answer": False,
+        "gap_description": "No calendar data model",
+        "proposal": "I could add calendar event tracking to my prompts.",
+        "prompt_name": "capture",
+        "prompt_update": "...updated prompt...",
+    })
+
+    env = {
+        "BOT_TOKEN": "fake",
+        "AUTHORIZED_USER_ID": "42",
+        "MESSAGES_FILE": str(log_file),
+        "ANTHROPIC_API_KEY": "fake-key",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        import config
+        config.validate_config()
+
+        original = _inject_brain(mock_brain)
+        try:
+            update = _make_update(42, "scott", "Scott", "start storing calendar dates")
+            context = MagicMock()
+            context.user_data = {}
+            await handle_message(update, context)
+        finally:
+            bot.brain = original
+
+    mock_brain.check_capability_gap.assert_called_once_with(
+        "start storing calendar dates", "Sure, I'll start tracking that!"
+    )
+    reply = update.message.reply_text.call_args[0][0]
+    assert "Sure, I'll start tracking that!" in reply
+    assert "I could add calendar event tracking" in reply
+    assert "/confirm_feature" in reply
+    assert context.user_data["pending_feature"]["prompt_name"] == "capture"
+
+
+@pytest.mark.asyncio
+async def test_handle_message_no_gap_when_capability_request_false(tmp_path: Path):
+    """When capture returns capability_request=False, gap check is not called."""
+    log_file = tmp_path / "messages.log"
+    mock_brain = _make_mock_brain(capture_response="Noted!")
+
+    env = {
+        "BOT_TOKEN": "fake",
+        "AUTHORIZED_USER_ID": "42",
+        "MESSAGES_FILE": str(log_file),
+        "ANTHROPIC_API_KEY": "fake-key",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        import config
+        config.validate_config()
+
+        original = _inject_brain(mock_brain)
+        try:
+            update = _make_update(42, "scott", "Scott", "just a regular note")
+            context = MagicMock()
+            context.user_data = {}
+            await handle_message(update, context)
+        finally:
+            bot.brain = original
+
+    mock_brain.check_capability_gap.assert_not_called()
+    update.message.reply_text.assert_called_once_with("Noted!")
 
 
 # --- /ask tests ---

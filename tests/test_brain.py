@@ -44,6 +44,20 @@ SAMPLE_LINK_ANALYSIS = json.dumps({
     "overview_update": "## Projects\n- eink book — found display controller",
 })
 
+SAMPLE_LIST_URL_ANALYSIS = json.dumps({
+    "item_type": "link",
+    "tags": ["grants", "nsw", "calendar"],
+    "summary": "NSW Create funding calendar — 3 grants listed",
+    "response": "Saved the funding calendar and extracted 3 individual grants as searchable items.",
+    "overview_update": None,
+    "capability_request": False,
+    "extracted_items": [
+        {"summary": "Quick Response Grant — Opens 1 Mar 2025, Closes 15 Mar 2025", "tags": ["quick-response", "deadline"]},
+        {"summary": "Regional Arts Fund — Opens 1 Apr 2025, Closes 30 Apr 2025", "tags": ["regional", "deadline"]},
+        {"summary": "Infrastructure Grant — Opens 1 May 2025, Closes 31 May 2025", "tags": ["infrastructure", "deadline"]},
+    ],
+})
+
 
 # --- capture() tests ---
 
@@ -86,9 +100,10 @@ async def test_capture_returns_llm_response():
     llm = _make_mock_llm()
     brain = KnowledgeBrain(llm=llm, store=store)
 
-    reply = await brain.capture("test message")
+    reply, capability_request = await brain.capture("test message")
 
     assert reply == "Got it! Saved as a note."
+    assert capability_request is False
 
 
 @pytest.mark.asyncio
@@ -163,6 +178,43 @@ async def test_capture_skips_overview_when_null():
 
 
 @pytest.mark.asyncio
+async def test_capture_saves_extracted_items():
+    """When LLM returns extracted_items, each is saved as a REFERENCE item."""
+    store = _make_mock_store()
+    llm = _make_mock_llm(SAMPLE_LIST_URL_ANALYSIS)
+    brain = KnowledgeBrain(llm=llm, store=store)
+
+    await brain.capture("https://example.com/grants-calendar")
+
+    # save_item called once for the parent link + 3 extracted items = 4 total
+    assert store.save_item.call_count == 4
+
+    # Check all extracted items are REFERENCE type with source_url
+    calls = store.save_item.call_args_list
+    extracted_calls = calls[1:]  # skip the parent item
+    for call in extracted_calls:
+        item = call[0][0]
+        assert item.item_type == ItemType.REFERENCE
+
+    # Check tag merging: parent tags + item-specific tags
+    first_extracted = extracted_calls[0][0][0]
+    assert "grants" in first_extracted.tags       # from parent
+    assert "quick-response" in first_extracted.tags  # from extracted item
+
+
+@pytest.mark.asyncio
+async def test_capture_no_extracted_items_when_empty():
+    """When LLM returns extracted_items=[], only the parent item is saved."""
+    store = _make_mock_store()
+    llm = _make_mock_llm()  # default has extracted_items=[]
+    brain = KnowledgeBrain(llm=llm, store=store)
+
+    await brain.capture("just a note")
+
+    store.save_item.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_capture_fallback_on_llm_error():
     """When LLM raises, message is saved as a plain NOTE."""
     store = _make_mock_store()
@@ -170,9 +222,10 @@ async def test_capture_fallback_on_llm_error():
     llm.analyze = AsyncMock(side_effect=RuntimeError("API down"))
     brain = KnowledgeBrain(llm=llm, store=store)
 
-    reply = await brain.capture("save this anyway")
+    reply, capability_request = await brain.capture("save this anyway")
 
     assert reply == "Saved to knowledge base."
+    assert capability_request is False
     saved_item = store.save_item.call_args[0][0]
     assert saved_item.item_type == ItemType.NOTE
     assert saved_item.tags == []
@@ -186,9 +239,10 @@ async def test_capture_fallback_on_json_parse_error():
     llm.analyze = AsyncMock(return_value="This is not valid JSON at all")
     brain = KnowledgeBrain(llm=llm, store=store)
 
-    reply = await brain.capture("save this too")
+    reply, capability_request = await brain.capture("save this too")
 
     assert reply == "Saved to knowledge base."
+    assert capability_request is False
     saved_item = store.save_item.call_args[0][0]
     assert saved_item.item_type == ItemType.NOTE
 
@@ -404,7 +458,7 @@ async def test_capture_no_log_when_none():
     llm = _make_mock_llm()
     brain = KnowledgeBrain(llm=llm, store=store, conversation_log=None)
 
-    reply = await brain.capture("a note")
+    reply, _ = await brain.capture("a note")
 
     assert reply == "Got it! Saved as a note."
 
@@ -470,7 +524,7 @@ async def test_conversation_log_failure_does_not_break_capture():
     conv_log.log.side_effect = RuntimeError("DB write failed")
     brain = KnowledgeBrain(llm=llm, store=store, conversation_log=conv_log)
 
-    reply = await brain.capture("save this")
+    reply, _ = await brain.capture("save this")
 
     # Should still return the LLM response despite logging failure
     assert reply == "Got it! Saved as a note."

@@ -6,7 +6,7 @@ Wires together the LLM client, SQLite store, URL fetcher, and PromptManager.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from knowledge.conversation_log import ConversationLogProtocol
 from knowledge.fetcher import extract_urls, fetch_url_content
@@ -101,7 +101,7 @@ class KnowledgeBrain:
         except Exception:
             logger.warning("Failed to log conversation", exc_info=True)
 
-    async def capture(self, text: str) -> str:
+    async def capture(self, text: str) -> Tuple[str, bool]:
         """Process an incoming message into the knowledge base.
 
         Steps:
@@ -112,7 +112,7 @@ class KnowledgeBrain:
         5. Parse structured JSON response
         6. Save KnowledgeItem to store
         7. Update overview if LLM provided an update
-        8. Return the confirmation reply
+        8. Return (confirmation reply, capability_request flag)
 
         On LLM failure, falls back to saving as unclassified note.
         """
@@ -137,7 +137,7 @@ class KnowledgeBrain:
             analysis = AnalysisResult.from_llm_json(raw_response)
         except Exception:
             logger.warning("LLM analysis failed, saving as raw note", exc_info=True)
-            return self._fallback_save(text, urls)
+            return self._fallback_save(text, urls), False
 
         # Log the successful LLM interaction
         self._log_conversation(
@@ -161,12 +161,20 @@ class KnowledgeBrain:
         )
         self.store.save_item(item)
 
+        # 6b: Save any individually extracted items (e.g. events from a calendar URL)
+        if analysis.extracted_items:
+            self._save_extracted_items(
+                analysis.extracted_items,
+                source_url=urls[0] if urls else None,
+                parent_tags=analysis.tags,
+            )
+
         # 7: Update overview if LLM says so
         if analysis.overview_update:
             self.store.save_overview(analysis.overview_update)
 
-        # 8: Return reply
-        return analysis.response
+        # 8: Return reply and capability_request flag
+        return analysis.response, analysis.capability_request
 
     def _fallback_save(self, text: str, urls: List[str]) -> str:
         """Save message as unclassified note when LLM is unavailable."""
@@ -179,6 +187,28 @@ class KnowledgeBrain:
         )
         self.store.save_item(item)
         return "Saved to knowledge base."
+
+    def _save_extracted_items(
+        self,
+        extracted_items: List[Dict],
+        source_url: Optional[str],
+        parent_tags: List[str],
+    ) -> None:
+        """Save individually extracted items (e.g. events from a list URL)."""
+        for raw in extracted_items:
+            summary = raw.get("summary", "")
+            if not summary:
+                continue
+            # Merge parent tags with item-specific tags, deduplicated
+            item_tags = list(dict.fromkeys(parent_tags + raw.get("tags", [])))
+            item = KnowledgeItem(
+                content=summary,
+                item_type=ItemType.REFERENCE,
+                tags=item_tags,
+                summary=summary,
+                source_url=source_url,
+            )
+            self.store.save_item(item)
 
     async def query(self, question: str) -> str:
         """Answer a question using the knowledge base.
