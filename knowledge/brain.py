@@ -1,11 +1,12 @@
 """Knowledge Base orchestrator — the single API that bot.py calls.
 
-Wires together the LLM client, SQLite store, and URL fetcher.
+Wires together the LLM client, SQLite store, URL fetcher, and PromptManager.
 """
 
 import json
 import logging
-from typing import List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional
 
 from knowledge.conversation_log import ConversationLogProtocol
 from knowledge.fetcher import extract_urls, fetch_url_content
@@ -17,18 +18,42 @@ from knowledge.models import (
     KnowledgeItem,
     SearchResult,
 )
+from knowledge.prompt_manager import PromptManager
 from knowledge.prompts import (
     capture_system_prompt,
+    capability_gap_prompt,
     overview_refresh_prompt,
     query_system_prompt,
 )
 from knowledge.store import StoreProtocol
 
+# Default base prompts directory, relative to this file
+_DEFAULT_PROMPTS_BASE = Path(__file__).parent.parent / "prompts"
+
 logger = logging.getLogger(__name__)
+
+# Phrases in an answer that suggest the bot lacks the capability to respond
+_INSUFFICIENT_CAPABILITY_SIGNALS = [
+    "i don't have",
+    "i do not have",
+    "no information",
+    "not stored",
+    "can't find",
+    "cannot find",
+    "no data",
+    "not tracked",
+    "don't track",
+    "do not track",
+    "no record",
+    "haven't stored",
+    "have not stored",
+    "isn't tracked",
+    "is not tracked",
+]
 
 
 class KnowledgeBrain:
-    """Orchestrator: wires together LLM, store, and fetcher.
+    """Orchestrator: wires together LLM, store, fetcher, and prompts.
 
     This is the single API that bot.py calls. All knowledge base
     operations go through this class.
@@ -39,10 +64,15 @@ class KnowledgeBrain:
         llm: LLMProtocol,
         store: StoreProtocol,
         conversation_log: Optional[ConversationLogProtocol] = None,
+        prompt_manager: Optional[PromptManager] = None,
     ):
         self.llm = llm
         self.store = store
         self.conversation_log = conversation_log
+        # Auto-create a base-only PromptManager when none is supplied
+        if prompt_manager is None and _DEFAULT_PROMPTS_BASE.exists():
+            prompt_manager = PromptManager(base_dir=_DEFAULT_PROMPTS_BASE)
+        self.pm = prompt_manager
 
     def _log_conversation(
         self,
@@ -101,7 +131,7 @@ class KnowledgeBrain:
             user_message += f"\n\n--- Fetched URL Content ---\n{url_content}"
 
         # 5: Call LLM for analysis
-        system = capture_system_prompt(overview)
+        system = capture_system_prompt(self.pm, overview)
         try:
             raw_response = await self.llm.analyze(user_message, system=system)
             analysis = AnalysisResult.from_llm_json(raw_response)
@@ -164,7 +194,7 @@ class KnowledgeBrain:
         results = self.store.search(question, limit=10)
         context = self._format_search_context(results)
 
-        system = query_system_prompt(overview, context)
+        system = query_system_prompt(self.pm, overview, context)
         try:
             answer = await self.llm.analyze(question, system=system)
             self._log_conversation(
@@ -180,6 +210,57 @@ class KnowledgeBrain:
                 return self._format_plain_results(results)
             return "I couldn't process that query right now."
 
+    async def check_capability_gap(
+        self, question: str, answer: str
+    ) -> Optional[Dict]:
+        """Check if an answer signals a capability gap and return a gap proposal.
+
+        Only triggers an extra LLM call when the answer contains phrases
+        indicating the bot lacks the capability (cheap keyword check first).
+
+        Args:
+            question: The original user question.
+            answer: The bot's answer to that question.
+
+        Returns:
+            A dict with gap fields (can_answer, gap_description, proposal,
+            prompt_name, prompt_update), or None if no gap detected.
+        """
+        if self.pm is None:
+            return None
+        if not self._signals_insufficient_capability(answer):
+            return None
+
+        system = capability_gap_prompt(self.pm)
+        user_msg = f"User asked: {question}\n\nBot answered: {answer}"
+        try:
+            raw = await self.llm.analyze(user_msg, system=system)
+            data = json.loads(raw)
+            if not data.get("can_answer", True):
+                return data
+        except Exception:
+            logger.warning("Capability gap detection failed", exc_info=True)
+        return None
+
+    async def evolve_prompt(self, name: str, new_text: str) -> str:
+        """Write an updated prompt and push it to the user's repo.
+
+        Args:
+            name: Prompt name without extension (e.g., "query").
+            new_text: Full new prompt template text.
+
+        Returns:
+            Human-readable confirmation message with commit hash.
+        """
+        if self.pm is None:
+            return "Prompt evolution not available — no user prompts directory configured."
+        try:
+            commit_hash = self.pm.update(name, new_text)
+            return f"Prompt '{name}' updated and pushed. Commit: {commit_hash}"
+        except Exception as e:
+            logger.warning("Prompt evolution failed: %s", e)
+            return f"Failed to update prompt '{name}': {e}"
+
     async def get_overview(self) -> str:
         """Return the current rolling overview."""
         overview = self.store.get_overview()
@@ -193,7 +274,7 @@ class KnowledgeBrain:
         recent = self.store.recent(limit=50)
         items_text = self._format_items_for_prompt(recent)
 
-        system = overview_refresh_prompt(overview, items_text)
+        system = overview_refresh_prompt(self.pm, overview, items_text)
         try:
             new_overview = await self.llm.analyze(
                 "Please regenerate the rolling overview.",
@@ -218,6 +299,11 @@ class KnowledgeBrain:
     def search(self, query: str, limit: int = 10) -> List[SearchResult]:
         """Search the knowledge base."""
         return self.store.search(query, limit=limit)
+
+    def _signals_insufficient_capability(self, answer: str) -> bool:
+        """Return True if the answer text suggests a capability gap."""
+        lower = answer.lower()
+        return any(signal in lower for signal in _INSUFFICIENT_CAPABILITY_SIGNALS)
 
     def _format_search_context(self, results: List[SearchResult]) -> str:
         """Format search results as context text for the LLM."""

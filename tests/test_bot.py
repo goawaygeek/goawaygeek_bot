@@ -43,6 +43,8 @@ def _make_mock_brain(
     mock_brain.query = AsyncMock(return_value=query_response)
     mock_brain.get_overview = AsyncMock(return_value=overview_text)
     mock_brain.refresh_overview = AsyncMock(return_value=refresh_result)
+    mock_brain.check_capability_gap = AsyncMock(return_value=None)
+    mock_brain.evolve_prompt = AsyncMock(return_value="Prompt updated.")
     mock_brain.recent.return_value = []
     mock_brain.search.return_value = []
     return mock_brain

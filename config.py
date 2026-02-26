@@ -1,10 +1,14 @@
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+ROOT: Path = Path(__file__).parent
+DATA_DIR: Path = ROOT / "data"
 
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 AUTHORIZED_USER_ID: int = 0
@@ -15,13 +19,18 @@ DB_PATH: Path = Path(os.getenv("DB_PATH", "./data/knowledge.db"))
 CONVERSATION_LOG_DB_PATH: Path = Path(os.getenv("CONVERSATION_LOG_DB_PATH", "./data/conversations.db"))
 OVERVIEW_MD_PATH: Path = Path(os.getenv("OVERVIEW_MD_PATH", "./data/overview.md"))
 
+# Prompt management
+PROMPTS_BASE_DIR: Path = ROOT / "prompts"
+PROMPTS_USER_DIR: Path = DATA_DIR / "user_prompts"
+PROMPTS_REPO_URL: Optional[str] = os.getenv("PROMPTS_REPO_URL") or None
+
 
 def validate_config() -> None:
     """Validate that all required config values are present and valid.
 
     Exits with a clear error message if anything is missing or invalid.
     """
-    global BOT_TOKEN, AUTHORIZED_USER_ID, MESSAGES_FILE, ANTHROPIC_API_KEY, LLM_MODEL, DB_PATH, CONVERSATION_LOG_DB_PATH, OVERVIEW_MD_PATH
+    global BOT_TOKEN, AUTHORIZED_USER_ID, MESSAGES_FILE, ANTHROPIC_API_KEY, LLM_MODEL, DB_PATH, CONVERSATION_LOG_DB_PATH, OVERVIEW_MD_PATH, PROMPTS_REPO_URL
 
     BOT_TOKEN = os.getenv("BOT_TOKEN", "")
     if not BOT_TOKEN:
@@ -50,3 +59,5 @@ def validate_config() -> None:
 
     CONVERSATION_LOG_DB_PATH = Path(os.getenv("CONVERSATION_LOG_DB_PATH", "./data/conversations.db"))
     OVERVIEW_MD_PATH = Path(os.getenv("OVERVIEW_MD_PATH", "./data/overview.md"))
+
+    PROMPTS_REPO_URL = os.getenv("PROMPTS_REPO_URL") or None
