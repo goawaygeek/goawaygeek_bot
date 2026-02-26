@@ -139,6 +139,12 @@ class KnowledgeBrain:
             logger.warning("LLM analysis failed, saving as raw note", exc_info=True)
             return self._fallback_save(text, urls), False
 
+        # If the LLM identified this as a question, route to query flow without saving
+        if analysis.is_query:
+            logger.info("Routing plain-message question to query flow")
+            query_response = await self.query(text)
+            return query_response, False
+
         # Log the successful LLM interaction
         self._log_conversation(
             interaction_type="capture",

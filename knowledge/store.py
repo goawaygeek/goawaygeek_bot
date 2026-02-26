@@ -2,10 +2,14 @@
 
 import json
 import logging
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Protocol
+
+# Strips anything that isn't a word character or whitespace before FTS5
+_FTS5_STRIP_RE = re.compile(r"[^\w\s]")
 
 from knowledge.models import ItemType, KnowledgeItem, SearchResult
 
@@ -149,8 +153,22 @@ class SQLiteStore:
             return None
         return self._row_to_item(row)
 
+    def _sanitize_fts_query(self, query: str) -> str:
+        """Convert a natural-language query to a valid FTS5 OR expression.
+
+        Strips punctuation and joins non-trivial tokens with OR so that
+        documents matching ANY term are returned (higher recall than AND).
+        Tokens shorter than 3 characters are dropped as noise.
+        """
+        cleaned = _FTS5_STRIP_RE.sub(" ", query)
+        tokens = [t for t in cleaned.split() if len(t) >= 3]
+        return " OR ".join(tokens)
+
     def search(self, query: str, limit: int = 10) -> List[SearchResult]:
         """Full-text search using FTS5 with bm25 ranking."""
+        fts_query = self._sanitize_fts_query(query)
+        if not fts_query:
+            return []
         try:
             rows = self._conn.execute(
                 """
@@ -161,10 +179,10 @@ class SQLiteStore:
                 ORDER BY rank
                 LIMIT ?
                 """,
-                (query, limit),
+                (fts_query, limit),
             ).fetchall()
         except sqlite3.OperationalError:
-            logger.warning("FTS5 search failed for query: %s", query)
+            logger.warning("FTS5 search failed for query: %s", fts_query, exc_info=True)
             return []
 
         results = []

@@ -73,6 +73,7 @@ class AnalysisResult:
     overview_update: Optional[str] = None
     capability_request: bool = False
     extracted_items: List[Dict] = field(default_factory=list)
+    is_query: bool = False
 
     @classmethod
     def from_llm_json(cls, raw: str) -> "AnalysisResult":
@@ -121,6 +122,7 @@ class AnalysisResult:
             overview_update=data.get("overview_update"),
             capability_request=bool(data.get("capability_request", False)),
             extracted_items=data.get("extracted_items") or [],
+            is_query=bool(data.get("is_query", False)),
         )
 
 

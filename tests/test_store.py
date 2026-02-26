@@ -101,6 +101,28 @@ def test_search_respects_limit(tmp_db: Path):
     assert len(results) == 2
 
 
+def test_search_strips_punctuation_from_query(tmp_db: Path):
+    """Natural-language questions with punctuation still find matching items."""
+    store = SQLiteStore(tmp_db)
+    store.save_item(_make_item(content="NSW Create grants open March 2025", summary="grants"))
+
+    # A natural question with a trailing ? should still find the item
+    results = store.search("what grants are open in March?")
+    assert len(results) >= 1
+
+
+def test_search_uses_or_matching(tmp_db: Path):
+    """Multi-word queries match documents containing ANY of the terms."""
+    store = SQLiteStore(tmp_db)
+    store.save_item(_make_item(content="grant funding deadline", summary="NSW grant"))
+    store.save_item(_make_item(content="totally unrelated content", summary="nothing"))
+
+    # "grants" and "funding" are OR'd; first item has both, second has neither
+    results = store.search("grants funding deadline")
+    assert len(results) == 1
+    assert "grant" in results[0].item.content
+
+
 def test_recent_returns_newest_first(tmp_db: Path):
     """Recent items are returned newest first."""
     store = SQLiteStore(tmp_db)

@@ -215,6 +215,30 @@ async def test_capture_no_extracted_items_when_empty():
 
 
 @pytest.mark.asyncio
+async def test_capture_routes_question_to_query():
+    """When LLM sets is_query=True, capture() calls query() and does NOT save an item."""
+    store = _make_mock_store()
+    query_json = json.dumps({
+        "item_type": "note",
+        "tags": [],
+        "summary": "",
+        "response": "irrelevant capture response",
+        "is_query": True,
+    })
+    llm = MagicMock()
+    # First analyze() call: capture classification (is_query=True)
+    # Second analyze() call: query() answering the question
+    llm.analyze = AsyncMock(side_effect=[query_json, "You have 3 open grants."])
+    brain = KnowledgeBrain(llm=llm, store=store)
+
+    reply, capability_request = await brain.capture("what grants are open in March?")
+
+    assert reply == "You have 3 open grants."
+    assert capability_request is False
+    store.save_item.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_capture_fallback_on_llm_error():
     """When LLM raises, message is saved as a plain NOTE."""
     store = _make_mock_store()
